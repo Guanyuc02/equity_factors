@@ -1,0 +1,96 @@
+WITH comp_q AS (
+    SELECT
+        f.gvkey,
+        f.datadate::date AS datadate,
+        f.rdq::date AS rdq,
+        f.ltq::numeric AS ltq,
+        f.ibq::numeric AS ibq,
+        f.dpq::numeric AS dpq,
+        f.ppentq::numeric AS ppentq,
+        COALESCE(NULLIF(c.sic, '')::int, NULL) AS sic
+    FROM comp.fundq AS f
+    LEFT JOIN comp.company AS c USING (gvkey)
+    WHERE f.indfmt = 'INDL'
+      AND f.datafmt = 'STD'
+      AND f.popsrc = 'D'
+      AND f.consol = 'C'
+),
+ccm_links AS (
+    SELECT
+        gvkey,
+        lpermno AS permno,
+        linktype,
+        linkprim,
+        linkdt::date,
+        COALESCE(linkenddt::date, '{{ end_date }}'::date) AS linkenddt
+    FROM crsp.ccmxpf_linktable
+    WHERE SUBSTR(linktype, 1, 1) = 'L'
+      AND linkprim IN ('C','P')
+),
+crsp_m AS (
+    SELECT
+        a.permno,
+        a.permco,
+        a.mthcaldt::date AS mthcaldt,
+        date_trunc('month', a.mthcaldt)::date AS ym
+    FROM crsp.msf_v2 AS a
+    WHERE a.mthcaldt BETWEEN DATE '{{ start_date }}' AND DATE '{{ end_date }}'
+    {% if filters %}
+      {% for k, v in filters.items() %}
+        AND {{ k }} {{ v }}
+      {% endfor %}
+    {% endif %}
+),
+comp_linked AS (
+    SELECT
+        q.gvkey,
+        l.permno,
+        q.datadate,
+        q.rdq,
+        q.ltq,
+        q.ibq,
+        q.dpq,
+        q.ppentq,
+        q.sic
+    FROM comp_q q
+    JOIN ccm_links l USING (gvkey)
+    WHERE q.rdq BETWEEN l.linkdt AND l.linkenddt
+)
+SELECT
+    x.permno,
+    x.permco,
+    x.mthcaldt AS jdate_ltrd,
+    x.ym,
+    x.gvkey,
+    x.datadate,
+    x.rdq,
+    x.ltq,
+    x.ibq,
+    x.dpq,
+    x.ppentq,
+    x.sic
+FROM (
+    SELECT
+        m.permno,
+        m.permco,
+        m.mthcaldt,
+        m.ym,
+        q.gvkey,
+        q.datadate,
+        q.rdq,
+        q.ltq,
+        q.ibq,
+        q.dpq,
+        q.ppentq,
+        q.sic,
+        ROW_NUMBER() OVER (
+            PARTITION BY m.permno, m.ym
+            ORDER BY q.rdq DESC, q.datadate DESC
+        ) AS rn
+    FROM crsp_m m
+    JOIN comp_linked q
+      ON q.permno = m.permno
+     AND q.rdq <= m.mthcaldt
+) x
+WHERE x.rn = 1
+ORDER BY jdate_ltrd, x.permno;

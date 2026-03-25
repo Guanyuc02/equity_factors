@@ -1,0 +1,35 @@
+-- CRSP monthly stock file with names enrichment for exchange/classification
+-- Includes common fields used in factor construction and NYSE breakpoints
+SELECT
+  a.permno,
+  a.permco,
+  a.mthcaldt::date AS mthcaldt,
+  n.shrcd,
+  n.exchcd,
+  a.issuertype,
+  a.securitytype,
+  a.securitysubtype,
+  a.sharetype,
+  a.usincflg,
+  a.primaryexch,
+  a.conditionaltype,
+  a.tradingstatusflg,
+  a.mthret,
+  a.mthretx,
+  a.shrout,
+  a.mthprc,
+  b.vol AS vol
+FROM crsp.msf_v2 AS a
+LEFT JOIN crsp.msf AS b
+  ON a.permno   = b.permno
+ AND a.mthcaldt = b.date
+LEFT JOIN crsp.msenames AS n
+  ON a.permno = n.permno
+ AND a.mthcaldt BETWEEN n.namedt AND COALESCE(n.nameendt, '9999-12-31'::date)
+WHERE a.mthcaldt BETWEEN DATE '{{ start_date }}' AND DATE '{{ end_date }}'
+{% if filters %}
+  {% for k, v in filters.items() %}
+    AND {{ k }} {{ v }}
+  {% endfor %}
+{% endif %}
+ORDER BY a.mthcaldt, a.permno;

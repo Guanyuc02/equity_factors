@@ -1,0 +1,187 @@
+WITH comp_core AS (
+    SELECT
+        f.gvkey,
+        f.datadate::date AS datadate,
+        COALESCE(NULLIF(f.pstkrv, 0), NULLIF(f.pstkl, 0), NULLIF(f.pstk, 0), 0)::numeric AS ps,
+        COALESCE(f.txditc, 0)::numeric AS txditc,
+        f.seq::numeric AS seq,
+        NULLIF((f.seq + COALESCE(f.txditc, 0) - COALESCE(NULLIF(f.pstkrv, 0), NULLIF(f.pstkl, 0), NULLIF(f.pstk, 0), 0))::numeric, 0) AS be_raw,
+        CASE WHEN (f.lct IS NOT NULL AND f.lct > 0) THEN f.act::numeric / f.lct::numeric ELSE NULL END AS currat,
+        f.act::numeric AS act,
+        f.invt::numeric AS invt,
+        f.lct::numeric AS lct,
+        f.sale::numeric AS sale,
+        f.cogs::numeric AS cogs,
+        f.che::numeric AS che,
+        f.rect::numeric AS rect,
+        f.dp::numeric AS dp,
+        f.ppent::numeric AS ppent,
+        f.ib::numeric AS ib,
+        f.at::numeric AS at,
+        f.oancf::numeric AS oancf,
+        f.xidoc::numeric AS xidoc,
+        f.dltt::numeric AS dltt,
+        f.dcvt::numeric AS dcvt,
+        f.dlc::numeric AS dlc,
+        f.emp::numeric AS emp,
+        f.xad::numeric AS xad,
+        f.xrd::numeric AS xrd,
+        f.txt::numeric AS txt,
+        COALESCE(f.sich::int, NULLIF(c.sic, '')::int) AS sic,
+        f.dvt::numeric AS dvt
+    FROM comp.funda AS f
+    LEFT JOIN comp.company AS c USING (gvkey)
+    WHERE f.indfmt = 'INDL'
+      AND f.datafmt = 'STD'
+      AND f.popsrc = 'D'
+      AND f.consol = 'C'
+),
+comp_be AS (
+    SELECT
+        gvkey,
+        datadate,
+        EXTRACT(YEAR FROM datadate)::int AS fyear,
+        NULLIF(be_raw, NULL) AS be,
+        currat,
+        act,
+        invt,
+        lct,
+        sale,
+        cogs,
+        che,
+        rect,
+        dp,
+        ppent,
+        ib,
+        at,
+        oancf,
+        xidoc,
+        dltt,
+        dlc,
+        dcvt,
+        sic,
+        emp,
+        xad,
+        xrd,
+        txt,
+        dvt,
+        CASE
+            WHEN LAG(sale) OVER (PARTITION BY gvkey ORDER BY datadate) IS NOT NULL
+             AND LAG(sale) OVER (PARTITION BY gvkey ORDER BY datadate) <> 0
+            THEN (sale - LAG(sale) OVER (PARTITION BY gvkey ORDER BY datadate))
+                 / LAG(sale) OVER (PARTITION BY gvkey ORDER BY datadate)
+            ELSE NULL
+        END AS sgr
+    FROM comp_core
+),
+ccm_links AS (
+    SELECT gvkey, lpermno AS permno, linktype, linkprim, linkdt::date, COALESCE(linkenddt::date, '{{ end_date }}'::date) AS linkenddt
+    FROM crsp.ccmxpf_linktable
+    WHERE SUBSTR(linktype, 1, 1) = 'L'
+      AND linkprim IN ('C','P')
+),
+comp_anchored AS (
+    SELECT
+        x.gvkey,
+        l.permno,
+        x.datadate,
+        x.fyear,
+        x.be,
+        x.currat,
+        x.oancf,
+        x.xidoc,
+        x.dltt,
+        x.dlc,
+        x.dcvt,
+        x.act,
+        x.invt,
+        x.lct,
+        x.sale,
+        x.cogs,
+        x.che,
+        x.rect,
+        x.dp,
+        x.ppent,
+        x.ib,
+        x.at,
+        x.emp,
+        x.xad,
+        x.xrd,
+        x.txt,
+        x.sic,
+        x.sgr,
+        x.dvt,
+        (date_trunc('year', x.datadate)::date + INTERVAL '1 year' - INTERVAL '1 day' + INTERVAL '6 months')::date AS jdate_jun,
+        date_trunc('month', (date_trunc('year', x.datadate)::date + INTERVAL '1 year' - INTERVAL '1 day' + INTERVAL '6 months'))::date AS ym
+    FROM comp_be x
+    JOIN ccm_links l USING (gvkey)
+    WHERE (date_trunc('year', x.datadate)::date + INTERVAL '1 year' - INTERVAL '1 day' + INTERVAL '6 months') BETWEEN l.linkdt AND l.linkenddt
+      AND EXTRACT(YEAR FROM x.datadate) = EXTRACT(YEAR FROM (date_trunc('month', (date_trunc('year', x.datadate)::date + INTERVAL '1 year' - INTERVAL '1 day' + INTERVAL '6 months')))) - 1
+),
+comp_dedupe AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY permno, ym ORDER BY datadate DESC) AS rn
+    FROM comp_anchored
+),
+crsp_m AS (
+    SELECT
+        a.permno,
+        a.permco,
+        a.mthcaldt::date AS mthcaldt,
+        a.mthret,
+        a.mthretx,
+        a.shrout,
+        a.mthprc,
+        date_trunc('month', a.mthcaldt)::date AS ym,
+        (date_trunc('month', a.mthcaldt) + INTERVAL '1 month' - INTERVAL '1 day')::date AS cal_mend
+    FROM crsp.msf_v2 AS a
+    WHERE a.mthcaldt BETWEEN DATE '{{ start_date }}' AND DATE '{{ end_date }}'
+    {% if filters %}
+      {% for k, v in filters.items() %}
+        AND {{ k }} {{ v }}
+      {% endfor %}
+    {% endif %}
+)
+SELECT
+    m.permno,
+    m.permco,
+    m.mthcaldt AS jdate_ltrd,
+    m.ym,
+    m.cal_mend,
+    m.mthret,
+    m.mthretx,
+    m.shrout,
+    m.mthprc,
+    c.gvkey,
+    c.datadate,
+    c.fyear,
+    c.sic,
+    c.be,
+    c.currat,
+    c.act,
+    c.invt,
+    c.lct,
+    c.sale,
+    c.cogs,
+    c.che,
+    c.rect,
+    c.dp,
+    c.ppent,
+    c.ib,
+    c.at,
+    c.oancf,
+    c.xidoc,
+    c.dltt,
+    c.dcvt,
+    c.dlc,
+    c.emp,
+    c.xad,
+    c.xrd,
+    c.txt,
+    c.sgr,
+    c.dvt
+FROM crsp_m m
+JOIN comp_dedupe c
+  ON m.permno = c.permno
+ AND m.ym = c.ym
+ AND c.rn = 1
+ORDER BY m.mthcaldt, m.permno;

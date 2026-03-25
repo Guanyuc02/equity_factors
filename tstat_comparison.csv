@@ -1,0 +1,16 @@
+Factor Name,Python tstat_ds,MATLAB tstat_ds,Difference,Diff (%)
+Cash holdings,-0.725562,-0.419665,-0.305897,72.890819
+HML Devil ,1.198240,1.037483,0.160757,15.494903
+Gross profitability,0.609915,0.476284,0.133631,28.056997
+Organizational Capital,1.649870,0.915426,0.734444,80.229697
+Betting Against Beta ,0.961870,1.445254,-0.483384,-33.446307
+Quality Minus Junk ,0.665787,2.028785,-1.362998,-67.182961
+Employee growth rate,0.796175,1.361440,-0.565265,-41.519659
+Growth in advertising expense,-1.114545,-1.176870,0.062324,-5.295777
+Book Asset Liquidity,0.876423,1.065701,-0.189278,-17.760913
+Robust Minus Weak ,3.831210,4.454137,-0.622927,-13.985366
+Conservative Minus Aggressive,0.290956,1.100056,-0.809101,-73.550853
+HXZ Investment,2.631964,2.106440,0.525524,24.948452
+HXZ Profitability ,2.618666,3.371897,-0.753231,-22.338490
+Intermediary Risk Factor,2.208057,2.208057,-0.000000,-0.000000
+Convertible debt indicator,-1.643099,-1.358552,-0.284547,20.944900
